@@ -284,12 +284,12 @@ export default function App() {
       const hum = parseFloat(currentHum);
 
       // Sinkronisasi status inkubator terkini
-      const lampuStatus = telemetry.statusLamp !== "UNKNOWN" ? telemetry.statusLamp : (temp <= 37.5 ? "ON" : "OFF");
+      const lampuStatus = temp >= 37.0 && temp <= 38.5 ? "ON" : "OFF";
       const statusData = {
         suhu_sekarang: temp,
         kelembapan_sekarang: hum,
         lampu_status: lampuStatus,
-        terakhir_rotasi: telemetry.statusMotor === "ON" ? new Date().toISOString() : null
+        terakhir_rotasi: null
       };
       fetchApi(`/api/incubator/status`, {
         method: "POST",

@@ -8,6 +8,7 @@ from ..database import get_db
 from ..models import Egg, Chick, IncubatorStatus, FinanceEntry, EggAkhir, FinanceTipe
 from ..schemas import DashboardSummary
 from ..auth import require_role, get_current_user
+from .incubator import resolve_terakhir_rotasi
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,12 @@ def dashboard_summary(current_user=Depends(require_role("pemilik", "staff")), db
         ).scalar() or 0
 
         inkubator_status = db.query(IncubatorStatus).order_by(IncubatorStatus.id.desc()).first()
+        if inkubator_status is not None and inkubator_status.terakhir_rotasi is None:
+            # Opsi B: isi otomatis dari rotation-log sukses terbaru.
+            # In-memory saja (tanpa commit).
+            resolved = resolve_terakhir_rotasi(db)
+            if resolved is not None:
+                inkubator_status.terakhir_rotasi = resolved
 
         finance_summary = None
         role = getattr(current_user, "role", None)
