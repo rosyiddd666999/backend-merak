@@ -356,3 +356,164 @@ sering jadi penyebab 500.
 **Q: Setelah fix, apakah perlu hapus user admin dan re-seed?**
 A: Tidak. User `USR-001` sudah ada dan login bekerja. Fix hanya untuk
 endpoint dashboard, bukan untuk data user.
+
+----------------------
+
+# Backend: Fix 500 `OperationalError` di `GET /api/incubator/status`
+
+Dokumen ini untuk developer backend Kampung Merak API.
+
+## Konteks (regresi!)
+
+Endpoint `GET /api/incubator/status` **sebelumnya return 404** ("Belum ada data
+status inkubator", ter-handle rapi di mobile). Sekarang return:
+
+```json
+{"detail": "Internal server error", "type": "OperationalError"}
+```
+
+Sementara endpoint lain (`/api/eggs`, `/api/users`, `/api/incubator/settings`,
+`/api/incubator/telemetry-logs`) tetap 200. Mobile sudah tahan (tampil `-` /
+empty-state, log diredam 1 baris), tapi data REST status tetap kosong sampai
+server diperbaiki. Live suhu mengandalkan MQTT sementara ini.
+
+> Catatan: `OperationalError` (bukan `ProgrammingError`) artinya **bukan**
+> salah sintaks query — melainkan koneksi/operasional MySQL: koneksi basi,
+> tabel hilang/rusak, lock timeout, atau pool habis.
+
+## 1. Ambil traceback asli (wajib pertama)
+
+```bash
+# Opsi 1
+docker logs kampung-merak-api --tail 300 2>&1 | grep -B 2 -A 40 "Traceback"
+
+# Opsi 2
+cd ~/merak/backend && docker compose logs api --tail 300 2>&1 | grep -B 2 -A 40 "Traceback"
+
+# Opsi 3: live reproduce
+docker logs -f kampung-merak-api &
+curl -s -H "X-API-Key: a6aGc2JHHIu3A53S10Ypkzwf7nKgt18jkerto" \
+  https://api-merak.abdulrosyid.my.id/api/incubator/status; echo
+```
+
+Cari baris terakhir exception: `(2006, 'MySQL server has gone away')`,
+`(2013, 'Lost connection')`, `(1205, 'Lock wait timeout')`,
+`(2003, "Can't connect")`, atau `(1146, "Table ... doesn't exist")`
+(yang terakhir biasanya `ProgrammingError`, tapi handler global bisa
+melabeli ulang — tetap cek).
+
+## 2. Hipotesis (urut periksa)
+
+### H1 — Koneksi pool basi ("MySQL server has gone away", 2006/2013) ⭐ paling mungkin
+Proses API long-running + `create_engine()` tanpa `pool_pre_ping`: koneksi
+idle melewati `wait_timeout` MySQL (default 8 jam) lalu dipakai lagi → 500.
+Dulu 404 karena koneksi masih segar; sekarang 500 setelah proses lama hidup.
+
+Cek: traceback menyebut 2006/2013, dan error muncul acak di endpoint DB
+lain dari waktu ke waktu.
+
+Fix (`app/database.py`):
+
+```python
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,   # buang koneksi basi sebelum dipakai
+    pool_recycle=3600,    # daur ulang tiap 1 jam
+)
+```
+
+### H2 — Tabel `incubator_status` hilang/rusak
+Regresi setelah migrasi/seed (`migrasi_silsilah.sql`, сюда). Router melakukan
+`db.query(IncubatorStatus).order_by(...).first()` — tabel tidak ada / kolom
+berubah → error saat query.
+
+Cek dari dalam MySQL:
+
+```sql
+SHOW TABLES LIKE 'incubator_status';
+DESCRIBE incubator_status;
+SELECT COUNT(*) FROM incubator_status;
+```
+
+Fix: jalankan ulang migrasi/create tabel yang sesuai `models.py` versi
+**yang ter-deploy** (bukan checkout lokal yang tertinggal — pastikan
+`git pull` dulu di server, karena router lokal mengimpor model yang tidak
+ada di `models.py` lokal).
+
+### H3 — Lock wait timeout (1205) / pool habis
+Banyak penulis konkuren ke tabel status: throttle web 60 dtk + sync mobile
+60 dtk + polling dashboard. Transaksi macet menahan lock.
+
+Cek:
+
+```sql
+SHOW ENGINE INNODB STATUS\G       -- cari "TRANSACTIONS" macet
+SHOW PROCESSLIST;                 -- query yang menggantung
+```
+
+Fix: bunuh transaksi macet (`KILL <id>`), pastikan tiap endpoint selalu
+`commit`/`rollback` + `close` (pola `get_db` sudah benar — jangan ada
+`db.commit()` yang tertinggal tanpa `try/finally` di path alert).
+
+### H4 — `check_and_create_alerts` ikut meledak saat POST
+Fungsi ini query `IncubatorSettings` + `commit` alert di dalam request
+`POST /api/incubator/status`. Jika tabel `alerts`/`incubator_settings`
+bermasalah, sync 60-detik (web + mobile) ikut 500 dan riwayat tak terisi.
+
+## 3. Hardening endpoint (wajib, agar tak pernah 500 mentah lagi)
+
+`app/routers/incubator.py`:
+
+```python
+import logging
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+@router.get("/status", response_model=IncubatorStatusResponse)
+def get_latest_status(db: Session = Depends(get_db)):
+    try:
+        status = db.query(IncubatorStatus).order_by(IncubatorStatus.id.desc()).first()
+    except OperationalError:
+        logger.exception("incubator/status: DB operational error")
+        raise HTTPException(status_code=503, detail="Database inkubator tidak tersedia")
+    if not status:
+        raise HTTPException(status_code=404, detail="Belum ada data status inkubator")
+    return status
+```
+
+Mobile mapping: `404` → kosong, `503` → "coba lagi nanti" (bisa ditambah
+nanti; saat ini diperlakukan sama seperti 500: data kosong).
+
+## 4. Verifikasi setelah fix
+
+```bash
+curl -s -H "X-API-Key: a6aGc2JHHIu3A53S10Ypkzwf7nKgt18jkerto" \
+  https://api-merak.abdulrosyid.my.id/api/incubator/status -w "\nHTTP:%{http_code}\n"
+# Harusnya 404 (kosong, normal) atau 200 berisi JSON — BUKAN 500.
+
+# Lalu POST satu status valid, GET lagi harus 200:
+curl -s -X POST -H "X-API-Key: a6aGc2JHHIu3A53S10Ypkzwf7nKgt18jkerto" \
+  -H "Content-Type: application/json" \
+  -d '{"suhu_sekarang":37.5,"kelembapan_sekarang":60,"lampu_status":"ON"}' \
+  https://api-merak.abdulrosyid.my.id/api/incubator/status -w "\nHTTP:%{http_code}\n"
+```
+
+## 5. Verifikasi dari mobile
+
+1. `flutter run`, buka Siklus Telur — log satu-baris 500 hilang.
+2. Suhu tampil dari MQTT (live) + kartu REST terisi setelah POST pertama masuk.
+3. Riwayat `telemetry-logs` mulai terisi via sync 60-detik.
+
+## FAQ
+
+**Q: Kenapa `/api/eggs` tetap 200 tapi status 500?**
+A: Karena penyebabnya spesifik koneksi/tabel status (H1–H3), bukan kredensial
+atau middleware. Endpoint lain memakai koneksi/tabel yang sehat.
+
+**Q: Apakah sync 60-detik mobile memperparah?**
+A: Tidak signifikan (1 req/menit, failure di-catch diam-diam). Tapi setelah
+backend sehat, sync inilah yang mengisi DB sehingga fallback REST hidup.
+
