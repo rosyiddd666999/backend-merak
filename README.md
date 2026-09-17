@@ -93,8 +93,6 @@ Dokumentasi pendalaman tersedia di [`SYSTEM_DOCUMENTATION.md`](SYSTEM_DOCUMENTAT
 |---|---|
 | ![Tampilan 3 — Telemetry, Rotation, Sales, Finance](screenshots/tampilan3.png) | ![Tampilan 4 — Dashboard, Alerts, User Management](screenshots/tampilan4.png) |
 
-> ⚠️ Catatan keamanan: `screenshots/get-eggs.png` menampilkan nilai `X-API-Key` dan token JWT asli di panel curl Swagger. Segera rotasi kedua kredensial tersebut dan pertimbangkan menangkap ulang screenshot dengan nilai yang disamarkan.
-
 ### 2.2 Frontend — Dashboard Web
 
 > Screenshot frontend menyusul. Folder `screenshots/` saat ini berisi capture backend di atas. Tampilan dashboard mengikuti role yang login (Viewer/Operator/Admin) dari hasil build produksi (`dist/`).
