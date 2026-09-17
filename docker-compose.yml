@@ -1,16 +1,26 @@
-version: '3.8'
-
 services:
-  frontend:
+  api:
     build:
-      context: .
+      context: ./fastapi-backend
       dockerfile: Dockerfile
-    container_name: kampung-merak-frontend
-    ports:
-      - "8087:80"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "cctv-gateway:127.0.0.1"
-    restart: always
-    environment:
-      - NODE_ENV=production
+
+    image: backend-api
+    container_name: kampung-merak-api
+
+    env_file:
+      - ./fastapi-backend/.env
+
+    networks:
+      - database
+      - proxy
+
+    restart: unless-stopped
+
+networks:
+  database:
+    external: true
+    name: webserver_database
+
+  proxy:
+    external: true
+    name: webserver_proxy
