@@ -13,6 +13,7 @@ import Icon from "../components/Icon.jsx";
 import MqttCommandPanel from "../components/MqttCommandPanel.jsx";
 import { formatNumber, VARIETAS } from "../data/constants.js";
 import { fetchApi } from "../utils/api.js";
+import { classifyTemp, classifyHumidity, formatRange, DEFAULT_THRESHOLDS } from "../hooks/useIncubatorThresholds.js";
 
 export default function DashboardPage({
   role,
@@ -26,7 +27,8 @@ export default function DashboardPage({
   setActiveVariety,
   publish,
   eggs,
-  logs
+  logs,
+  thresholds = DEFAULT_THRESHOLDS,
 }) {
   const [summary, setSummary] = useState(null);
   const [incubatorStatus, setIncubatorStatus] = useState(null);
@@ -55,20 +57,10 @@ export default function DashboardPage({
   const currentTemp = telemetry.temperature ?? (incubatorStatus?.suhu_sekarang != null ? Number(incubatorStatus.suhu_sekarang) : null);
   const currentHum = telemetry.humidity ?? (incubatorStatus?.kelembapan_sekarang != null ? Number(incubatorStatus.kelembapan_sekarang) : null);
 
-  const isTempIdeal = currentTemp != null && currentTemp >= 37.5 && currentTemp <= 38.0;
-  const isHumIdeal = currentHum != null && currentHum >= 45 && currentHum <= 50;
-
-  const tempState = currentTemp == null
-    ? "waiting"
-    : isTempIdeal
-      ? "ideal"
-      : (currentTemp < 36.5 || currentTemp > 39.0) ? "danger" : "warning";
-
-  const humState = currentHum == null
-    ? "waiting"
-    : isHumIdeal
-      ? "ideal"
-      : (currentHum < 40 || currentHum > 60) ? "danger" : "warning";
+  // Badge presisi ikut ambang DB; zona margin = warning kuning tanpa notifikasi,
+  // lewat margin = perhatian (backend membuat record Alert).
+  const tempState = classifyTemp(currentTemp, thresholds);
+  const humState = classifyHumidity(currentHum, thresholds);
 
   const tempNote = telemetry.temperature != null
     ? "Topik: iot/telemetry/temperature (Live MQTT)"
@@ -121,7 +113,7 @@ export default function DashboardPage({
           title="Suhu Inkubator"
           value={formatNumber(currentTemp)}
           unit="°C"
-          target="Ideal: 37.5 - 38.0 °C"
+          target={`Ideal: ${formatRange(thresholds.suhu_min, thresholds.suhu_max, "°C")}`}
           note={tempNote}
           state={tempState}
           updatedAt={tempUpdatedAt}
@@ -131,7 +123,7 @@ export default function DashboardPage({
           title="Kelembaban"
           value={formatNumber(currentHum, currentHum != null && currentHum % 1 !== 0 ? 1 : 0)}
           unit="%"
-          target="Ideal: 45 - 50 %"
+          target={`Ideal: ${formatRange(thresholds.kelembapan_min, thresholds.kelembapan_max, "%")}`}
           note={humNote}
           state={humState}
           updatedAt={tempUpdatedAt}
@@ -286,6 +278,8 @@ export default function DashboardPage({
         isConnected={isMqttConnected}
         currentTemp={currentTemp}
         currentHum={currentHum}
+        suhuRange={[thresholds.suhu_min, thresholds.suhu_max]}
+        humRange={[thresholds.kelembapan_min, thresholds.kelembapan_max]}
       />
 
       {/* Panel Kontrol Aktuator & Threshold MQTT */}

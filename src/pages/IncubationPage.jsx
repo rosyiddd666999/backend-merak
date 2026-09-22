@@ -6,6 +6,7 @@ import AlertPanel from "../components/AlertPanel.jsx";
 import MqttCommandPanel from "../components/MqttCommandPanel.jsx";
 import VarietyToggle from "../components/VarietyToggle.jsx";
 import { ROLES, VARIETAS } from "../data/constants.js";
+import { DEFAULT_THRESHOLDS } from "../hooks/useIncubatorThresholds.js";
 
 const units = [
   {
@@ -72,14 +73,16 @@ export default function IncubationPage({
   humidityTrend,
   activeVariety,
   setActiveVariety,
+  thresholds = DEFAULT_THRESHOLDS,
 }) {
   if (!ROLES[role].allowed.includes("pengeraman")) {
     return <AccessDenied role={role} feature="Monitoring Pengeraman" />;
   }
 
   const profile = VARIETAS[activeVariety] || VARIETAS.hijau;
-  const isTempIdeal = telemetry.temperature >= 37.5 && telemetry.temperature <= 38.0;
-  const isHumIdeal = telemetry.humidity >= 45 && telemetry.humidity <= 50;
+  // Badge presisi ikut ambang DB (tanpa margin di halaman ini).
+  const isTempIdeal = telemetry.temperature >= thresholds.suhu_min && telemetry.temperature <= thresholds.suhu_max;
+  const isHumIdeal = telemetry.humidity >= thresholds.kelembapan_min && telemetry.humidity <= thresholds.kelembapan_max;
   const theme = activeVariety === "biru"
     ? {
         hero: "from-slate-950 via-blue-950 to-slate-900",

@@ -19,6 +19,7 @@ const ChicksPage = lazy(() => import("./pages/ChicksPage.jsx"));
 
 // Hooks & Data
 import { useMqttBridge } from "./hooks/useMqttBridge.js";
+import useIncubatorThresholds from "./hooks/useIncubatorThresholds.js";
 import {
   ROLES,
   ROLE_ACCESS_CODES,
@@ -247,6 +248,10 @@ export default function App() {
   const { mqttUrl, clientId, connection, telemetry, temperatureTrend, humidityTrend, logs, publish } =
     useMqttBridge();
 
+  // === AMBANG INKUBATOR DARI DATABASE ===
+  // Satu-satunya sumber kebenaran range suhu/kelembaban untuk badge UI.
+  const { thresholds, refreshThresholds } = useIncubatorThresholds();
+
   // === SIDE-EFFECTS ===
   useEffect(() => {
     if (darkMode) {
@@ -283,8 +288,13 @@ export default function App() {
       const temp = parseFloat(currentTemp);
       const hum = parseFloat(currentHum);
 
-      // Sinkronisasi status inkubator terkini
-      const lampuStatus = temp >= 37.0 && temp <= 38.5 ? "ON" : "OFF";
+      // Status lampu: pakai telemetri aktual bila ada, fallback heuristik range DB.
+      // (Dulu hardcoded 37.0-38.5 yang tidak ikut update database.)
+      const lampFromTelemetry = (telemetry.statusLamp === "ON" || telemetry.statusLamp === "OFF")
+        ? telemetry.statusLamp
+        : null;
+      const lampuStatus = lampFromTelemetry
+        ?? (temp >= thresholds.suhu_min && temp <= thresholds.suhu_max ? "ON" : "OFF");
       const statusData = {
         suhu_sekarang: temp,
         kelembapan_sekarang: hum,
@@ -298,7 +308,7 @@ export default function App() {
         console.error("Gagal menyimpan status inkubator ke database:", err);
       });
     }
-  }, [telemetry]);
+  }, [telemetry, thresholds]);
 
   // === HANDLERS ===
   const handleRoleRequest = (requestedRole) => {
@@ -350,6 +360,8 @@ export default function App() {
       setActiveVariety,
       cctvUrl,
       setCctvUrl,
+      thresholds,
+      refreshThresholds,
     };
     
     let content;

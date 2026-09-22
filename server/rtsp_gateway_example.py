@@ -221,6 +221,15 @@ def kandang_feed() -> Response:
     )
 
 
+@app.get("/snapshot.jpg")
+def snapshot() -> Response:
+    """Satu frame JPEG terbaru untuk di-scrape scheduler FastAPI tiap 4 jam."""
+    if not incubator_streamer.is_alive():
+        return Response("kamera offline", status=503, mimetype="text/plain")
+    jpeg = incubator_streamer.get_jpeg()
+    return Response(jpeg, mimetype="image/jpeg")
+
+
 @app.get("/health")
 @app.get("/cctv_health")
 def health() -> dict:
@@ -233,6 +242,7 @@ def health() -> dict:
         "incubator_target": mask_rtsp_url(INCUBATOR_RTSP_URL),
         "incubator_endpoint": "/video_feed",
         "kandang_endpoint": "/kandang_feed",
+        "snapshot_endpoint": "/snapshot.jpg",
     }
 
 

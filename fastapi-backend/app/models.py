@@ -79,6 +79,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     nama = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="staff")
+    avatar_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -194,3 +195,12 @@ class Alert(Base):
     level = Column(SAEnum(AlertLevel), nullable=False)
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class CctvSnapshot(Base):
+    __tablename__ = "cctv_snapshots"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    captured_at = Column(DateTime, server_default=func.now(), nullable=False)
+    object_key = Column(String(500), nullable=False)
+    url = Column(String(500), nullable=False)
+    source = Column(String(100), nullable=False, default="incubator")

@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/incubator", tags=["Incubator"])
 
+# Margin notifikasi: badge UI presisi ikut DB, record Alert baru dibuat
+# bila nilai melewati ambang + margin ini. Sinkron dengan
+# ALERT_SUHU_MARGIN / ALERT_HUMIDITY_MARGIN di src/hooks/useIncubatorThresholds.js.
+ALERT_SUHU_MARGIN = 0.2  # °C
+ALERT_HUMIDITY_MARGIN = 2.0  # poin persen
+
 
 def _parse_rotation_timestamp(raw) -> Optional[datetime]:
     """Parse toleran RotationLog.timestamp (VARCHAR bebas) -> datetime | None."""
@@ -59,22 +65,28 @@ def resolve_terakhir_rotasi(db: Session) -> Optional[datetime]:
 
 
 def check_and_create_alerts(db: Session, suhu: float, kelembapan: float):
-    settings = db.query(IncubatorSettings).first()
+    settings = db.query(IncubatorSettings).order_by(IncubatorSettings.id.desc()).first()
     if not settings:
         return
 
     alerts_to_create = []
 
-    if suhu < float(settings.suhu_min) or suhu > float(settings.suhu_max):
+    suhu_min = float(settings.suhu_min)
+    suhu_max = float(settings.suhu_max)
+    if suhu < suhu_min - ALERT_SUHU_MARGIN or suhu > suhu_max + ALERT_SUHU_MARGIN:
         level = AlertLevel.CRITICAL
-        pesan = (f"Suhu {suhu}°C di luar range "
-                 f"({settings.suhu_min}-{settings.suhu_max}°C)")
+        pesan = (f"Suhu {suhu}°C di luar batas notifikasi "
+                 f"({suhu_min - ALERT_SUHU_MARGIN:.1f}-{suhu_max + ALERT_SUHU_MARGIN:.1f}°C "
+                 f"dari setting {suhu_min}-{suhu_max}°C)")
         alerts_to_create.append(Alert(tipe=AlertTipe.SUHU, pesan=pesan, level=level))
 
-    if kelembapan < float(settings.kelembapan_min) or kelembapan > float(settings.kelembapan_max):
+    hum_min = float(settings.kelembapan_min)
+    hum_max = float(settings.kelembapan_max)
+    if kelembapan < hum_min - ALERT_HUMIDITY_MARGIN or kelembapan > hum_max + ALERT_HUMIDITY_MARGIN:
         level = AlertLevel.WARNING
-        pesan = (f"Kelembapan {kelembapan}% di luar range "
-                 f"({settings.kelembapan_min}-{settings.kelembapan_max}%)")
+        pesan = (f"Kelembapan {kelembapan}% di luar batas notifikasi "
+                 f"({hum_min - ALERT_HUMIDITY_MARGIN:.0f}-{hum_max + ALERT_HUMIDITY_MARGIN:.0f}% "
+                 f"dari setting {hum_min}-{hum_max}%)")
         alerts_to_create.append(Alert(tipe=AlertTipe.KELEMBAPAN, pesan=pesan, level=level))
 
     for alert in alerts_to_create:
@@ -86,7 +98,7 @@ def check_and_create_alerts(db: Session, suhu: float, kelembapan: float):
 
 @router.get("/settings", response_model=IncubatorSettingsResponse)
 def get_settings(db: Session = Depends(get_db)):
-    settings = db.query(IncubatorSettings).first()
+    settings = db.query(IncubatorSettings).order_by(IncubatorSettings.id.desc()).first()
     if not settings:
         raise HTTPException(status_code=404, detail="Pengaturan inkubator belum diinisialisasi")
     return settings
@@ -98,7 +110,7 @@ def update_settings(
     current_user=Depends(require_role("pemilik", "staff")),
     db: Session = Depends(get_db),
 ):
-    settings = db.query(IncubatorSettings).first()
+    settings = db.query(IncubatorSettings).order_by(IncubatorSettings.id.desc()).first()
     if not settings:
         raise HTTPException(status_code=404, detail="Pengaturan inkubator belum diinisialisasi")
     for key, value in settings_data.model_dump().items():

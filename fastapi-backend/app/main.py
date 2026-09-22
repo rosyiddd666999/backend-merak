@@ -12,8 +12,9 @@ from dotenv import load_dotenv
 
 from .database import engine, Base, get_db
 from .models import IncubatorSettings, User
-from .routers import auth, breeders, eggs, chicks, incubator, sales, finance, dashboard, alerts, users
+from .routers import auth, breeders, eggs, chicks, incubator, sales, finance, dashboard, alerts, users, storage, cctv
 from .auth import get_password_hash
+from .storage import ensure_bucket
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +34,28 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    try:
+        ensure_bucket()
+    except Exception:
+        logger.exception("ensure_bucket MinIO gagal saat startup")
+    scheduler = None
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+        from .cctv_snapshot import get_cctv_settings, run_cctv_snapshot_job
+
+        if get_cctv_settings()["enabled"]:
+            scheduler = AsyncIOScheduler()
+            # Scraping CCTV incubator setiap 4 jam + sekali saat startup.
+            scheduler.add_job(run_cctv_snapshot_job, "interval", hours=4, id="cctv-snapshot-4h")
+            scheduler.start()
+            logger.info("CCTV snapshot scheduler aktif (tiap 4 jam)")
+            try:
+                run_cctv_snapshot_job()
+            except Exception:
+                logger.exception("CCTV snapshot awal gagal")
+    except Exception:
+        logger.exception("Gagal start CCTV scheduler")
     db = next(get_db())
     try:
         settings = db.query(IncubatorSettings).first()
@@ -67,6 +90,11 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     yield
+    if scheduler is not None:
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            pass
 
 
 app = FastAPI(title="Kampung Merak API", version="1.0.0", lifespan=lifespan)
@@ -151,6 +179,9 @@ app.include_router(finance.router)
 app.include_router(dashboard.router)
 app.include_router(alerts.router)
 app.include_router(users.router)
+app.include_router(storage.router)
+app.include_router(storage.legacy_router)
+app.include_router(cctv.router)
 
 
 @app.get("/")

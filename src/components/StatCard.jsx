@@ -8,7 +8,7 @@ import Icon from "./Icon.jsx";
  * @param {string} [unit] - unit suffix (°C, %, etc.)
  * @param {string} target - sub-label (range / target info)
  * @param {string} note - bottom note / MQTT topic / status
- * @param {string} [state] - "ideal" | "warning" | "danger" | "waiting"
+ * @param {string} [state] - "ideal" | "warning" | "perhatian" | "danger" | "waiting"
  * @param {string} [updatedAt] - timestamp string
  */
 export default function StatCard({ icon, title, value, unit, target, note, state = "ideal", updatedAt }) {
@@ -33,6 +33,13 @@ export default function StatCard({ icon, title, value, unit, target, note, state
       badgeIcon: "warning",
       iconBg: "bg-status-warningBg",
       iconColor: "text-status-warningText",
+    },
+    perhatian: {
+      badge: "km-badge km-badge-danger",
+      badgeLabel: "Perhatian",
+      badgeIcon: "priority_high",
+      iconBg: "bg-status-dangerBg",
+      iconColor: "text-status-dangerText",
     },
     standby: {
       badge: "km-badge km-badge-neutral",
