@@ -85,7 +85,7 @@ function renderCompactChart({ title, data, fallbackSeries, idealRange, unit, col
   );
 }
 
-export default function IncubationTrendChart({ trend, humidityTrend, isConnected, currentTemp, currentHum }) {
+export default function IncubationTrendChart({ trend, humidityTrend, isConnected, currentTemp, currentHum, suhuRange = [37.5, 38.5], humRange = [55, 65] }) {
   const isLive = Boolean(isConnected);
 
   return (
@@ -113,7 +113,7 @@ export default function IncubationTrendChart({ trend, humidityTrend, isConnected
           title: "Suhu",
           data: trend,
           fallbackSeries: DEFAULT_TREND,
-          idealRange: [37.5, 38.0],
+          idealRange: suhuRange,
           unit: "°C",
           color: "#006b58",
           gradientId: "tempTrend",
@@ -124,7 +124,7 @@ export default function IncubationTrendChart({ trend, humidityTrend, isConnected
           title: "Kelembaban",
           data: humidityTrend,
           fallbackSeries: DEFAULT_HUMIDITY_TREND,
-          idealRange: [45, 50],
+          idealRange: humRange,
           unit: "%",
           color: "#2563eb",
           gradientId: "humidityTrend",

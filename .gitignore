@@ -44,6 +44,9 @@ Thumbs.db
 .env.production.local
 .env.production
 
+# Firmware asli ESP32 berisi kredensial — hanya template .example yang di-commit
+esp32/*.ino
+
 # Archival backups in workspace
 *.rar
 *.zip

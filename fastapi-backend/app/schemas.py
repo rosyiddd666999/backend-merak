@@ -16,6 +16,7 @@ class UserResponse(BaseModel):
     email: str
     nama: str
     role: str
+    avatar_url: Optional[str] = None
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +34,7 @@ class UserUpdate(BaseModel):
     nama: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 # --- Breeder ---
@@ -225,3 +227,26 @@ class DashboardSummary(BaseModel):
     total_anakan_bulan_ini: int
     inkubator_status: Optional[IncubatorStatusResponse] = None
     finance_summary: Optional[dict] = None
+
+
+# --- Storage (MinIO) ---
+class UploadResponse(BaseModel):
+    message: str = "Upload berhasil"
+    folder: str
+    filename: str
+    object_key: str
+    url: str
+
+
+class DeleteResponse(BaseModel):
+    message: str
+
+
+# --- CCTV Snapshot ---
+class CctvSnapshotResponse(BaseModel):
+    id: int
+    captured_at: Optional[datetime] = None
+    object_key: str
+    url: str
+    source: str
+    model_config = ConfigDict(from_attributes=True)

@@ -8,7 +8,7 @@ import { ROLES } from "../data/constants.js";
 import Icon from "../components/Icon.jsx";
 import MqttCommandPanel from "../components/MqttCommandPanel.jsx";
 
-export default function SettingsPage({ role, activeVariety, setActiveVariety, mqttUrl, clientId, connection, cctvUrl, setCctvUrl, telemetry, publish }) {
+export default function SettingsPage({ role, activeVariety, setActiveVariety, mqttUrl, clientId, connection, cctvUrl, setCctvUrl, telemetry, publish, thresholds, refreshThresholds }) {
   if (!ROLES[role].allowed.includes("pengaturan")) {
     return <AccessDenied role={role} feature="Pengaturan Sistem" />;
   }
@@ -26,6 +26,69 @@ export default function SettingsPage({ role, activeVariety, setActiveVariety, mq
   
   const [apiStatus, setApiStatus] = useState(null);
   const [isCheckingApi, setIsCheckingApi] = useState(false);
+
+  // === Form ambang inkubator (tersimpan di database, diikuti badge & notifikasi) ===
+  const [thresholdForm, setThresholdForm] = useState({
+    suhu_min: "",
+    suhu_max: "",
+    kelembapan_min: "",
+    kelembapan_max: "",
+    interval_rotasi_menit: "",
+  });
+  const [isSavingThresholds, setIsSavingThresholds] = useState(false);
+  const [thresholdMsg, setThresholdMsg] = useState(null);
+
+  useEffect(() => {
+    if (thresholds) {
+      setThresholdForm({
+        suhu_min: thresholds.suhu_min ?? "",
+        suhu_max: thresholds.suhu_max ?? "",
+        kelembapan_min: thresholds.kelembapan_min ?? "",
+        kelembapan_max: thresholds.kelembapan_max ?? "",
+        interval_rotasi_menit: thresholds.interval_rotasi_menit ?? 240,
+      });
+    }
+  }, [thresholds]);
+
+  const handleSaveThresholds = async () => {
+    const payload = {
+      suhu_min: Number(thresholdForm.suhu_min),
+      suhu_max: Number(thresholdForm.suhu_max),
+      kelembapan_min: Number(thresholdForm.kelembapan_min),
+      kelembapan_max: Number(thresholdForm.kelembapan_max),
+      interval_rotasi_menit: Number(thresholdForm.interval_rotasi_menit),
+    };
+    if (
+      [payload.suhu_min, payload.suhu_max, payload.kelembapan_min, payload.kelembapan_max, payload.interval_rotasi_menit]
+        .some((v) => !Number.isFinite(v))
+    ) {
+      setThresholdMsg({ ok: false, text: "Semua field harus berupa angka." });
+      return;
+    }
+    if (payload.suhu_min >= payload.suhu_max || payload.kelembapan_min >= payload.kelembapan_max) {
+      setThresholdMsg({ ok: false, text: "Batas bawah harus lebih kecil dari batas atas." });
+      return;
+    }
+    setIsSavingThresholds(true);
+    setThresholdMsg(null);
+    try {
+      await fetchApi("/api/incubator/settings", { method: "PUT", body: JSON.stringify(payload) });
+      if (refreshThresholds) await refreshThresholds();
+      setThresholdMsg({ ok: true, text: "Ambang tersimpan. Badge & notifikasi kini mengikutinya." });
+    } catch (err) {
+      setThresholdMsg({ ok: false, text: `Gagal menyimpan: ${err.message}` });
+    } finally {
+      setIsSavingThresholds(false);
+    }
+  };
+
+  const thresholdFields = [
+    { key: "suhu_min", label: "Suhu Min (°C)", step: "0.1" },
+    { key: "suhu_max", label: "Suhu Maks (°C)", step: "0.1" },
+    { key: "kelembapan_min", label: "Kelembaban Min (%)", step: "1" },
+    { key: "kelembapan_max", label: "Kelembaban Maks (%)", step: "1" },
+    { key: "interval_rotasi_menit", label: "Interval Rotasi (menit)", step: "1" },
+  ];
 
   const checkApiHealth = async () => {
     setIsCheckingApi(true);
@@ -163,6 +226,46 @@ export default function SettingsPage({ role, activeVariety, setActiveVariety, mq
             </p>
           )}
 
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Ambang Suhu & Kelembaban Inkubator">
+        <div className="space-y-4">
+          <p className="font-body text-sm text-ink-secondary leading-relaxed">
+            Ambang tersimpan di database dan langsung diikuti badge dashboard (Normal / Warning kuning / Perhatian).
+            Notifikasi Alert baru dibuat bila nilai melewati ambang + margin (suhu ±0.2°C, kelembaban ±2%).
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {thresholdFields.map((f) => (
+              <div key={f.key}>
+                <label className="block text-xs font-bold text-ink-primary uppercase tracking-widest mb-1.5">{f.label}</label>
+                <input
+                  type="number"
+                  step={f.step}
+                  value={thresholdForm[f.key]}
+                  onChange={(e) => setThresholdForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  className="w-full rounded-xl border border-alpine-high bg-alpine-low px-4 py-2.5 text-sm font-mono text-ink-primary shadow-inner outline-none transition-all focus:border-teal-iridescence focus:ring-1 focus:ring-teal-iridescence"
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <button
+              type="button"
+              disabled={isSavingThresholds}
+              onClick={handleSaveThresholds}
+              className="px-6 py-2.5 rounded-xl bg-teal-iridescence text-white font-bold text-sm hover:bg-teal-iridescence/90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
+            >
+              <Icon name="check" className="text-[18px]" />
+              {isSavingThresholds ? "Menyimpan..." : "Simpan Ambang"}
+            </button>
+            {thresholdMsg && (
+              <p className={`font-body text-xs flex items-center gap-1 ${thresholdMsg.ok ? "text-status-success" : "text-status-dangerText"}`}>
+                <Icon name={thresholdMsg.ok ? "check_circle" : "error"} className="text-[14px]" />
+                {thresholdMsg.text}
+              </p>
+            )}
+          </div>
         </div>
       </SectionCard>
     </div>
