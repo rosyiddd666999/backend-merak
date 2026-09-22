@@ -73,6 +73,10 @@ async def upload_image(
             object_key=object_key,
             url=file_url,
         )
+    except RuntimeError as e:
+        # Konfigurasi MinIO belum lengkap (ENV kurang) — salah deploy, bukan salah file.
+        logger.error("Konfigurasi MinIO belum lengkap: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
     except (BotoCoreError, ClientError) as e:
         logger.exception("Gagal upload ke MinIO: %s", e)
         raise HTTPException(status_code=500, detail=f"Gagal upload ke MinIO: {e}")

@@ -38,17 +38,34 @@ ALLOWED_EXTENSIONS = frozenset({"jpg", "jpeg", "png", "webp", "gif"})
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 
 
+# ENV wajib — tanpa default hardcoded. Bila belum di-set di
+# fastapi-backend/.env, get_minio_settings() melempar RuntimeError
+# dengan daftar nama yang kurang (fail-fast, bukan crash AttributeError).
+REQUIRED_MINIO_VARS = (
+    "MINIO_ENDPOINT",
+    "MINIO_ACCESS_KEY",
+    "MINIO_SECRET_KEY",
+    "MINIO_BUCKET",
+)
+
+
 def get_minio_settings() -> dict:
+    missing = [k for k in REQUIRED_MINIO_VARS if not (os.getenv(k) or "").strip()]
+    if missing:
+        raise RuntimeError(
+            "Konfigurasi MinIO belum lengkap. ENV belum di-set: "
+            + ", ".join(missing)
+            + ". Isi di fastapi-backend/.env lalu recreate container API."
+        )
     return {
         # ENDPOINT INTERNAL untuk koneksi boto3 (jangan isi domain publik di sini).
-        "endpoint": os.getenv("MINIO_ENDPOINT", "http://minio-storage:9005"),
+        "endpoint": os.getenv("MINIO_ENDPOINT").strip().rstrip("/"),
         "access_key": os.getenv("MINIO_ACCESS_KEY"),
         "secret_key": os.getenv("MINIO_SECRET_KEY"),
-        "bucket": os.getenv("MINIO_BUCKET"),
-        # PUBLIC BASE URL hanya untuk string URL akhir ke frontend/DB (tidak dipakai koneksi).
-        "public_base_url": os.getenv(
-            "MINIO_PUBLIC_BASE_URL"
-        ).strip(),
+        "bucket": os.getenv("MINIO_BUCKET").strip(),
+        # PUBLIC BASE URL hanya untuk string URL akhir ke frontend/DB
+        # (tidak dipakai koneksi). Opsional: kosong = {endpoint}/{bucket}.
+        "public_base_url": (os.getenv("MINIO_PUBLIC_BASE_URL") or "").strip(),
     }
 
 
